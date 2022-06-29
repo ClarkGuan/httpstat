@@ -332,16 +332,35 @@ func visit(url *url.URL) {
 	printf("\n%s%s%s\n", color.GreenString("HTTP"), grayscale(14)("/"), color.CyanString("%d.%d %s", resp.ProtoMajor, resp.ProtoMinor, resp.Status))
 
 	names := make([]string, 0, len(resp.Header))
-	var total int64
 	for k := range resp.Header {
-		if k == "Content-Length" && len(resp.Header[k]) > 0 {
-			total, _ = strconv.ParseInt(resp.Header[k][0], 10, 64)
-		}
 		names = append(names, k)
 	}
 	sort.Sort(headers(names))
+
+	var total int64
 	for _, k := range names {
-		printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
+		if k == "Content-Length" && len(resp.Header[k]) > 0 {
+			total, _ = strconv.ParseInt(resp.Header[k][0], 10, 64)
+			f := float64(total)
+			unit := "B"
+			if f > 1024*1024*1024*1024 {
+				f /= 1024 * 1024 * 1024 * 1024
+				unit = "TB"
+			}
+			if f > 1024*1024*1024 {
+				f /= 1024 * 1024 * 1024
+				unit = "GB"
+			} else if f > 1024*1024 {
+				f /= 1024 * 1024
+				unit = "MB"
+			} else if f > 1024 {
+				f /= 1024
+				unit = "KB"
+			}
+			printf("%s %s (%s)\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")), color.GreenString("%.2f%s", f, unit))
+		} else {
+			printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
+		}
 	}
 
 	bodyMsg := readResponseBody(req, resp, total)
