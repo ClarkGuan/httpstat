@@ -617,7 +617,7 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 
 		if total > 0 && verbose {
 			speed, unit := speedFunc(written, startTime)
-			printf("%s: %.2f%%  %4.2f%s/s\r", color.GreenString("Receive"), float32(written)*100/float32(total), speed, unit)
+			printf("%s: %.2f%%  %.2f%s/s        \r", color.GreenString("Receive"), float32(written)*100/float32(total), speed, unit)
 		}
 	}
 
@@ -626,7 +626,7 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 	} else {
 		if total > 0 && verbose {
 			speed, unit := speedFunc(written, startTime)
-			printf("%s: 100.00%%  %4.2f%s/s\n", color.GreenString("Receive"), speed, unit)
+			printf("%s: 100.00%%  %.2f%s/s        \n", color.GreenString("Receive"), speed, unit)
 		}
 	}
 
