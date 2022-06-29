@@ -9,7 +9,7 @@ But seriously, https://github.com/reorx/httpstat is the new hotness, and this is
 ## Installation
 `httpstat` requires Go 1.13 or later.
 ```
-$ go install github.com/davecheney/httpstat@latest
+$ go install github.com/ClarkGuan/httpstat@latest
 ```
 
 ## Usage
@@ -28,6 +28,7 @@ $ httpstat https://example.com/
 - The response body is usually discarded, you can use `-o filename` to save it to a file, or `-O` to save it to the file name suggested by the server.
 - HTTP/HTTPS proxies supported via the usual `HTTP_PROXY`/`HTTPS_PROXY` env vars (as well as lower case variants).
 - Supply your own client side certificate with `-E cert.pem`.
+- Verbose output with `-vv`
 
 ## Contributing
 
