@@ -67,10 +67,14 @@ var (
 
 	version = "devel" // for -v flag, updated during the release process with -ldflags=-X=main.version=...
 
-	verbose bool
+	verbose      bool
+	readTimeout  int
+	writeTimeout int
 )
 
 var errInvalidWrite = errors.New("invalid write result")
+var errReadTimeout = errors.New("read timeout")
+var errWriteTimeout = errors.New("write timeout")
 
 const maxRedirects = 10
 
@@ -88,6 +92,8 @@ func init() {
 	flag.BoolVar(&fourOnly, "4", false, "resolve IPv4 addresses only")
 	flag.BoolVar(&sixOnly, "6", false, "resolve IPv6 addresses only")
 	flag.BoolVar(&verbose, "vv", false, "show verbose log")
+	flag.IntVar(&readTimeout, "rtimeout", 0, "read timeout")
+	flag.IntVar(&writeTimeout, "wtimeout", 0, "write timeout")
 
 	flag.Usage = usage
 }
@@ -230,23 +236,14 @@ func visit(url *url.URL) {
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(_ httptrace.DNSStartInfo) {
 			t0 = time.Now()
-			//if verbose {
-			//	printf("DNS start...\n")
-			//}
 		},
 		DNSDone: func(_ httptrace.DNSDoneInfo) {
 			t1 = time.Now()
-			//if verbose {
-			//	printf("DNS end...\n")
-			//}
 		},
 		ConnectStart: func(_, _ string) {
 			if t1.IsZero() {
 				// connecting to IP
 				t1 = time.Now()
-				//if verbose {
-				//	printf("connect start...\n")
-				//}
 			}
 		},
 		ConnectDone: func(net, addr string, err error) {
@@ -278,6 +275,9 @@ func visit(url *url.URL) {
 		TLSHandshakeTimeout:   10 * time.Second,
 		ExpectContinueTimeout: 1 * time.Second,
 		ForceAttemptHTTP2:     true,
+	}
+	if readTimeout > 0 {
+		tr.ResponseHeaderTimeout = time.Duration(readTimeout) * time.Second
 	}
 
 	switch {
@@ -474,6 +474,63 @@ func getFilenameFromHeaders(headers http.Header) string {
 	return ""
 }
 
+func timeoutRead(src io.Reader, buf []byte, timeout time.Duration) (int, error) {
+	if timeout <= 0 {
+		return src.Read(buf)
+	}
+
+	timer := time.NewTimer(timeout)
+	ch := make(chan struct {
+		n   int
+		err error
+	})
+	go func() {
+		n, err := src.Read(buf)
+		if err == io.EOF {
+			err = nil
+		}
+		ch <- struct {
+			n   int
+			err error
+		}{n, err}
+	}()
+
+	select {
+	case <-timer.C:
+		return 0, errReadTimeout
+	case ret := <-ch:
+		timer.Stop()
+		return ret.n, ret.err
+	}
+}
+
+func timeoutWrite(dst io.Writer, buf []byte, timeout time.Duration) (int, error) {
+	if timeout <= 0 {
+		return dst.Write(buf)
+	}
+
+	timer := time.NewTimer(timeout)
+	ch := make(chan struct {
+		n   int
+		err error
+	})
+	go func() {
+		n, err := dst.Write(buf)
+		ch <- struct {
+			n   int
+			err error
+		}{n, err}
+	}()
+
+	select {
+	case <-timer.C:
+		return 0, errWriteTimeout
+	case ret := <-ch:
+		timer.Stop()
+		return ret.n, ret.err
+	}
+}
+
 // readResponseBody consumes the body of the response.
 // readResponseBody returns an informational message about the
 // disposition of the response body's contents.
@@ -509,54 +566,51 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		msg = color.CyanString("Body read")
 	}
 
-	if verbose && total > 0 {
+	if verbose {
 		printf("\n")
+	}
 
-		buf := make([]byte, 32*1024)
-		src := resp.Body
-		dst := w
-		var written int64
-		var err error
+	buf := make([]byte, 32*1024)
+	src := resp.Body
+	dst := w
+	var written int64
+	var err error
 
-		for {
-			nr, er := src.Read(buf)
-			if nr > 0 {
-				nw, ew := dst.Write(buf[0:nr])
-				if nw < 0 || nr < nw {
-					nw = 0
-					if ew == nil {
-						ew = errInvalidWrite
-					}
-				}
-				written += int64(nw)
-				if ew != nil {
-					err = ew
-					break
-				}
-				if nr != nw {
-					err = io.ErrShortWrite
-					break
+	for {
+		nr, er := timeoutRead(src, buf, time.Duration(readTimeout)*time.Second)
+		if nr > 0 {
+			nw, ew := timeoutWrite(dst, buf[0:nr], time.Duration(writeTimeout)*time.Second)
+			if nw < 0 || nr < nw {
+				nw = 0
+				if ew == nil {
+					ew = errInvalidWrite
 				}
 			}
-			if er != nil {
-				if er != io.EOF {
-					err = er
-				}
+			written += int64(nw)
+			if ew != nil {
+				err = ew
 				break
 			}
+			if nr != nw {
+				err = io.ErrShortWrite
+				break
+			}
+		}
+		if er != nil {
+			err = er
+			break
+		}
 
+		if total > 0 && verbose {
 			printf("%s: %.2f%%\r", color.GreenString("Receive"), float32(written)*100/float32(total))
 		}
+	}
 
-		if err != nil {
-			log.Fatalf("failed to read response body: %v", err)
-		} else {
-			printf("%s: 100.00%%\n", color.GreenString("Receive"))
-		}
-
+	if err != nil {
+		log.Fatalf("failed to read response body: %v", err)
 	} else {
-		if _, err := io.Copy(w, resp.Body); err != nil {
-			log.Fatalf("failed to read response body: %v", err)
+		if total > 0 && verbose {
+			printf("%s: 100.00%%\n", color.GreenString("Receive"))
 		}
 	}
 
