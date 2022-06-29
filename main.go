@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/tls"
 	"encoding/pem"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -65,7 +66,11 @@ var (
 	redirectsFollowed int
 
 	version = "devel" // for -v flag, updated during the release process with -ldflags=-X=main.version=...
+
+	verbose bool
 )
+
+var errInvalidWrite = errors.New("invalid write result")
 
 const maxRedirects = 10
 
@@ -82,6 +87,7 @@ func init() {
 	flag.StringVar(&clientCertFile, "E", "", "client cert file for tls config")
 	flag.BoolVar(&fourOnly, "4", false, "resolve IPv4 addresses only")
 	flag.BoolVar(&sixOnly, "6", false, "resolve IPv6 addresses only")
+	flag.BoolVar(&verbose, "vv", false, "show verbose log")
 
 	flag.Usage = usage
 }
@@ -222,12 +228,25 @@ func visit(url *url.URL) {
 	var t0, t1, t2, t3, t4, t5, t6 time.Time
 
 	trace := &httptrace.ClientTrace{
-		DNSStart: func(_ httptrace.DNSStartInfo) { t0 = time.Now() },
-		DNSDone:  func(_ httptrace.DNSDoneInfo) { t1 = time.Now() },
+		DNSStart: func(_ httptrace.DNSStartInfo) {
+			t0 = time.Now()
+			//if verbose {
+			//	printf("DNS start...\n")
+			//}
+		},
+		DNSDone: func(_ httptrace.DNSDoneInfo) {
+			t1 = time.Now()
+			//if verbose {
+			//	printf("DNS end...\n")
+			//}
+		},
 		ConnectStart: func(_, _ string) {
 			if t1.IsZero() {
 				// connecting to IP
 				t1 = time.Now()
+				//if verbose {
+				//	printf("connect start...\n")
+				//}
 			}
 		},
 		ConnectDone: func(net, addr string, err error) {
@@ -235,13 +254,20 @@ func visit(url *url.URL) {
 				log.Fatalf("unable to connect to host %v: %v", addr, err)
 			}
 			t2 = time.Now()
-
-			printf("\n%s%s\n", color.GreenString("Connected to "), color.CyanString(addr))
+			printf("%s%s\n", color.GreenString("Connected to "), color.CyanString(addr))
 		},
-		GotConn:              func(_ httptrace.GotConnInfo) { t3 = time.Now() },
-		GotFirstResponseByte: func() { t4 = time.Now() },
-		TLSHandshakeStart:    func() { t5 = time.Now() },
-		TLSHandshakeDone:     func(_ tls.ConnectionState, _ error) { t6 = time.Now() },
+		GotConn: func(_ httptrace.GotConnInfo) {
+			t3 = time.Now()
+		},
+		GotFirstResponseByte: func() {
+			t4 = time.Now()
+		},
+		TLSHandshakeStart: func() {
+			t5 = time.Now()
+		},
+		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
+			t6 = time.Now()
+		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(context.Background(), trace))
 
@@ -300,27 +326,31 @@ func visit(url *url.URL) {
 			connectedVia = "TLSv1.3"
 		}
 	}
-	printf("\n%s %s\n", color.GreenString("Connected via"), color.CyanString("%s", connectedVia))
+	printf("%s %s\n", color.GreenString("Connected via"), color.CyanString("%s", connectedVia))
 
-	bodyMsg := readResponseBody(req, resp)
+	// print status line and headers
+	printf("\n%s%s%s\n", color.GreenString("HTTP"), grayscale(14)("/"), color.CyanString("%d.%d %s", resp.ProtoMajor, resp.ProtoMinor, resp.Status))
+
+	names := make([]string, 0, len(resp.Header))
+	var total int64
+	for k := range resp.Header {
+		if k == "Content-Length" && len(resp.Header[k]) > 0 {
+			total, _ = strconv.ParseInt(resp.Header[k][0], 10, 64)
+		}
+		names = append(names, k)
+	}
+	sort.Sort(headers(names))
+	for _, k := range names {
+		printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
+	}
+
+	bodyMsg := readResponseBody(req, resp, total)
 	resp.Body.Close()
 
 	t7 := time.Now() // after read body
 	if t0.IsZero() {
 		// we skipped DNS
 		t0 = t1
-	}
-
-	// print status line and headers
-	printf("\n%s%s%s\n", color.GreenString("HTTP"), grayscale(14)("/"), color.CyanString("%d.%d %s", resp.ProtoMajor, resp.ProtoMinor, resp.Status))
-
-	names := make([]string, 0, len(resp.Header))
-	for k := range resp.Header {
-		names = append(names, k)
-	}
-	sort.Sort(headers(names))
-	for _, k := range names {
-		printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
 	}
 
 	if bodyMsg != "" {
@@ -447,7 +477,7 @@ func getFilenameFromHeaders(headers http.Header) string {
 // readResponseBody consumes the body of the response.
 // readResponseBody returns an informational message about the
 // disposition of the response body's contents.
-func readResponseBody(req *http.Request, resp *http.Response) string {
+func readResponseBody(req *http.Request, resp *http.Response, total int64) string {
 	if isRedirect(resp) || req.Method == http.MethodHead {
 		return ""
 	}
@@ -479,8 +509,55 @@ func readResponseBody(req *http.Request, resp *http.Response) string {
 		msg = color.CyanString("Body read")
 	}
 
-	if _, err := io.Copy(w, resp.Body); err != nil && w != ioutil.Discard {
-		log.Fatalf("failed to read response body: %v", err)
+	if verbose && total > 0 {
+		printf("\n")
+
+		buf := make([]byte, 32*1024)
+		src := resp.Body
+		dst := w
+		var written int64
+		var err error
+
+		for {
+			nr, er := src.Read(buf)
+			if nr > 0 {
+				nw, ew := dst.Write(buf[0:nr])
+				if nw < 0 || nr < nw {
+					nw = 0
+					if ew == nil {
+						ew = errInvalidWrite
+					}
+				}
+				written += int64(nw)
+				if ew != nil {
+					err = ew
+					break
+				}
+				if nr != nw {
+					err = io.ErrShortWrite
+					break
+				}
+			}
+			if er != nil {
+				if er != io.EOF {
+					err = er
+				}
+				break
+			}
+
+			printf("%s: %.2f%%\r", color.GreenString("Receive"), float32(written)*100/float32(total))
+		}
+
+		if err != nil {
+			log.Fatalf("failed to read response body: %v", err)
+		} else {
+			printf("%s: 100.00%%\n", color.GreenString("Receive"))
+		}
+
+	} else {
+		if _, err := io.Copy(w, resp.Body); err != nil {
+			log.Fatalf("failed to read response body: %v", err)
+		}
 	}
 
 	return msg
