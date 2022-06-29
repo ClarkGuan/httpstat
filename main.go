@@ -486,9 +486,6 @@ func timeoutRead(src io.Reader, buf []byte, timeout time.Duration) (int, error) 
 	})
 	go func() {
 		n, err := src.Read(buf)
-		if err == io.EOF {
-			err = nil
-		}
 		ch <- struct {
 			n   int
 			err error
@@ -575,6 +572,20 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 	dst := w
 	var written int64
 	var err error
+	startTime := time.Now()
+	speedFunc := func(written int64, startTime time.Time) (float64, string) {
+		speed := float64(written) / float64(time.Now().Sub(startTime)) * float64(time.Second)
+		unit := "B"
+		if speed < 1024*1024 && speed >= 1024 {
+			speed /= 1024
+			unit = "KB"
+		} else if speed > 1024*1024 {
+			speed /= 1024 * 1024
+			unit = "MB"
+		}
+
+		return speed, unit
+	}
 
 	for {
 		nr, er := timeoutRead(src, buf, time.Duration(readTimeout)*time.Second)
@@ -596,13 +607,17 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 				break
 			}
 		}
+
 		if er != nil {
-			err = er
+			if er != io.EOF {
+				err = er
+			}
 			break
 		}
 
 		if total > 0 && verbose {
-			printf("%s: %.2f%%\r", color.GreenString("Receive"), float32(written)*100/float32(total))
+			speed, unit := speedFunc(written, startTime)
+			printf("%s: %.2f%%  %4.2f%s/s\r", color.GreenString("Receive"), float32(written)*100/float32(total), speed, unit)
 		}
 	}
 
@@ -610,7 +625,8 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		log.Fatalf("failed to read response body: %v", err)
 	} else {
 		if total > 0 && verbose {
-			printf("%s: 100.00%%\n", color.GreenString("Receive"))
+			speed, unit := speedFunc(written, startTime)
+			printf("%s: 100.00%%  %4.2f%s/s\n", color.GreenString("Receive"), speed, unit)
 		}
 	}
 
