@@ -341,23 +341,11 @@ func visit(url *url.URL) {
 	for _, k := range names {
 		if k == "Content-Length" && len(resp.Header[k]) > 0 {
 			total, _ = strconv.ParseInt(resp.Header[k][0], 10, 64)
-			f := float64(total)
-			unit := "B"
-			if f > 1024*1024*1024*1024 {
-				f /= 1024 * 1024 * 1024 * 1024
-				unit = "TB"
+			if total > 0 {
+				printf("%s %s (%s)\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")), color.GreenString("%s", Space(total)))
+			} else {
+				printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
 			}
-			if f > 1024*1024*1024 {
-				f /= 1024 * 1024 * 1024
-				unit = "GB"
-			} else if f > 1024*1024 {
-				f /= 1024 * 1024
-				unit = "MB"
-			} else if f > 1024 {
-				f /= 1024
-				unit = "KB"
-			}
-			printf("%s %s (%s)\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")), color.GreenString("%.2f%s", f, unit))
 		} else {
 			printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
 		}
@@ -592,18 +580,9 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 	var written int64
 	var err error
 	startTime := time.Now()
-	speedFunc := func(written int64, startTime time.Time) (float64, string) {
+	speedFunc := func(written int64, startTime time.Time) Space {
 		speed := float64(written) / float64(time.Now().Sub(startTime)) * float64(time.Second)
-		unit := "B"
-		if speed < 1024*1024 && speed >= 1024 {
-			speed /= 1024
-			unit = "KB"
-		} else if speed > 1024*1024 {
-			speed /= 1024 * 1024
-			unit = "MB"
-		}
-
-		return speed, unit
+		return Space(speed)
 	}
 
 	for {
@@ -635,8 +614,8 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		}
 
 		if total > 0 && verbose {
-			speed, unit := speedFunc(written, startTime)
-			printf("%s: %.2f%%  %.2f%s/s        \r", color.GreenString("Receive"), float32(written)*100/float32(total), speed, unit)
+			space := speedFunc(written, startTime)
+			printf("%s: %.2f%%  %s/s        \r", color.GreenString("Receive"), float32(written)*100/float32(total), space)
 		}
 	}
 
@@ -644,8 +623,8 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		log.Fatalf("failed to read response body: %v", err)
 	} else {
 		if total > 0 && verbose {
-			speed, unit := speedFunc(written, startTime)
-			printf("%s: 100.00%%  %.2f%s/s        \n", color.GreenString("Receive"), speed, unit)
+			space := speedFunc(written, startTime)
+			printf("%s: 100.00%%  %s/s        \n", color.GreenString("Receive"), space)
 		}
 	}
 
@@ -703,4 +682,26 @@ func (h headers) Less(i, j int) bool {
 		return a < b
 	}
 	return x
+}
+
+type Space float64
+
+func (s Space) String() string {
+	f := float64(s)
+	unit := "B"
+	if f > 1024*1024*1024*1024 {
+		f /= 1024 * 1024 * 1024 * 1024
+		unit = "TB"
+	}
+	if f > 1024*1024*1024 {
+		f /= 1024 * 1024 * 1024
+		unit = "GB"
+	} else if f > 1024*1024 {
+		f /= 1024 * 1024
+		unit = "MB"
+	} else if f > 1024 {
+		f /= 1024
+		unit = "KB"
+	}
+	return fmt.Sprintf("%.2f%s", f, unit)
 }
