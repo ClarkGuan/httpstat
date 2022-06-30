@@ -29,6 +29,8 @@ $ httpstat https://example.com/
 - HTTP/HTTPS proxies supported via the usual `HTTP_PROXY`/`HTTPS_PROXY` env vars (as well as lower case variants).
 - Supply your own client side certificate with `-E cert.pem`.
 - Verbose output with `-vv`
+- Read timeout with `-rtimeout <timeout-seconds>`
+- Write timeout with `-wtimeout <timeout-seconds>`
 
 ## Contributing
 
