@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"io/ioutil"
 	"log"
 	"mime"
 	"net"
@@ -162,7 +161,7 @@ func readClientCert(filename string) []tls.Certificate {
 	)
 
 	// read client certificate file (must include client private key and certificate)
-	certFileBytes, err := ioutil.ReadFile(filename)
+	certFileBytes, err := os.ReadFile(filename)
 	if err != nil {
 		log.Fatalf("failed to read client certificate file: %v", err)
 	}
@@ -543,7 +542,7 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		return ""
 	}
 
-	w := ioutil.Discard
+	w := io.Discard
 	msg := color.CyanString("Body discarded")
 
 	if saveOutput || outputFile != "" {
