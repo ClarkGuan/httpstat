@@ -340,10 +340,11 @@ func visit(url *url.URL) {
 	for _, k := range names {
 		if k == "Content-Length" && len(resp.Header[k]) > 0 {
 			total, _ = strconv.ParseInt(resp.Header[k][0], 10, 64)
+			printf("%s %s", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
 			if total > 0 {
-				printf("%s %s (%s)\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")), color.GreenString("%s", Space(total)))
+				printf(" (%s)\n", color.GreenString("%s", Space(total)))
 			} else {
-				printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
+				printf("\n")
 			}
 		} else {
 			printf("%s %s\n", grayscale(14)(k+":"), color.CyanString(strings.Join(resp.Header[k], ",")))
