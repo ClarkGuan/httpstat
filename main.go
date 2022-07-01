@@ -613,18 +613,29 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 			break
 		}
 
-		if total > 0 && verbose {
-			space := speedFunc(written, startTime)
-			printf("%s: %.2f%%  %s/s        \r", color.GreenString("Receive"), float32(written)*100/float32(total), space)
+		if verbose {
+			if total > 0 {
+				space := speedFunc(written, startTime)
+				printf("%s: %.2f%%  %s/s        \r", color.GreenString("Receive"), float32(written)*100/float32(total), space)
+			} else {
+				printf("%s: %s        \r", color.GreenString("Receive"), Space(written))
+			}
 		}
 	}
 
 	if err != nil {
+		if verbose {
+			printf("\n")
+		}
 		log.Fatalf("failed to read response body: %v", err)
 	} else {
-		if total > 0 && verbose {
-			space := speedFunc(written, startTime)
-			printf("%s: 100.00%%  %s/s        \n", color.GreenString("Receive"), space)
+		if verbose {
+			if total > 0 {
+				space := speedFunc(written, startTime)
+				printf("%s: 100.00%%  %s/s        \n", color.GreenString("Receive"), space)
+			} else {
+				printf("%s: %s (100%)        \n", color.GreenString("Receive"), Space(written))
+			}
 		}
 	}
 
@@ -689,18 +700,23 @@ type Space float64
 func (s Space) String() string {
 	f := float64(s)
 	unit := "B"
-	if f > 1024*1024*1024*1024 {
-		f /= 1024 * 1024 * 1024 * 1024
+	const KB = 1024
+	const MB = KB * 1024
+	const GB = MB * 1024
+	const TB = GB * 1024
+
+	if f > TB {
+		f /= TB
 		unit = "TB"
 	}
-	if f > 1024*1024*1024 {
-		f /= 1024 * 1024 * 1024
+	if f > GB {
+		f /= GB
 		unit = "GB"
-	} else if f > 1024*1024 {
-		f /= 1024 * 1024
+	} else if f > MB {
+		f /= MB
 		unit = "MB"
-	} else if f > 1024 {
-		f /= 1024
+	} else if f > KB {
+		f /= KB
 		unit = "KB"
 	}
 	return fmt.Sprintf("%.2f%s", f, unit)
