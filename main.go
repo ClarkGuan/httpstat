@@ -235,14 +235,23 @@ func visit(url *url.URL) {
 	trace := &httptrace.ClientTrace{
 		DNSStart: func(_ httptrace.DNSStartInfo) {
 			t0 = time.Now()
+			if verbose {
+				printf("DNS resolving...                 \r")
+			}
 		},
 		DNSDone: func(_ httptrace.DNSDoneInfo) {
 			t1 = time.Now()
+			if verbose {
+				printf("DNS resolved...                 \r")
+			}
 		},
 		ConnectStart: func(_, _ string) {
 			if t1.IsZero() {
 				// connecting to IP
 				t1 = time.Now()
+			}
+			if verbose {
+				printf("start to connect...                 \r")
 			}
 		},
 		ConnectDone: func(net, addr string, err error) {
@@ -250,7 +259,7 @@ func visit(url *url.URL) {
 				log.Fatalf("unable to connect to host %v: %v", addr, err)
 			}
 			t2 = time.Now()
-			printf("%s%s\n", color.GreenString("Connected to "), color.CyanString(addr))
+			printf("%s%s                            \n", color.GreenString("Connected to "), color.CyanString(addr))
 		},
 		GotConn: func(_ httptrace.GotConnInfo) {
 			t3 = time.Now()
@@ -260,9 +269,15 @@ func visit(url *url.URL) {
 		},
 		TLSHandshakeStart: func() {
 			t5 = time.Now()
+			if verbose {
+				printf("TLS handshake...                 \r")
+			}
 		},
 		TLSHandshakeDone: func(_ tls.ConnectionState, _ error) {
 			t6 = time.Now()
+			if verbose {
+				printf("TLS handshake finished...                 \r")
+			}
 		},
 	}
 	req = req.WithContext(httptrace.WithClientTrace(context.Background(), trace))
@@ -325,7 +340,7 @@ func visit(url *url.URL) {
 			connectedVia = "TLSv1.3"
 		}
 	}
-	printf("%s %s\n", color.GreenString("Connected via"), color.CyanString("%s", connectedVia))
+	printf("%s %s                                  \n", color.GreenString("Connected via"), color.CyanString("%s", connectedVia))
 
 	// print status line and headers
 	printf("\n%s%s%s\n", color.GreenString("HTTP"), grayscale(14)("/"), color.CyanString("%d.%d %s", resp.ProtoMajor, resp.ProtoMinor, resp.Status))
@@ -634,7 +649,7 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 				space := speedFunc(written, startTime)
 				printf("%s: 100.00%%  %s/s        \n", color.GreenString("Receive"), space)
 			} else {
-				printf("%s: %s (100%)        \n", color.GreenString("Receive"), Space(written))
+				printf("%s: %s (100%%)        \n", color.GreenString("Receive"), Space(written))
 			}
 		}
 	}
