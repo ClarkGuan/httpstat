@@ -8,7 +8,6 @@ import (
 	"flag"
 	"fmt"
 	"io"
-	"log"
 	"mime"
 	"net"
 	"net/http"
@@ -137,7 +136,8 @@ func main() {
 	}
 
 	if (httpMethod == "POST" || httpMethod == "PUT") && postBody == "" {
-		log.Fatal("must supply post body using -d when POST or PUT is used")
+		printf("must supply post body using -d when POST or PUT is used")
+		os.Exit(1)
 	}
 
 	if onlyHeader {
@@ -163,7 +163,8 @@ func readClientCert(filename string) []tls.Certificate {
 	// read client certificate file (must include client private key and certificate)
 	certFileBytes, err := os.ReadFile(filename)
 	if err != nil {
-		log.Fatalf("failed to read client certificate file: %v", err)
+		printf("failed to read client certificate file: %v", err)
+		os.Exit(1)
 	}
 
 	for {
@@ -183,7 +184,8 @@ func readClientCert(filename string) []tls.Certificate {
 
 	cert, err := tls.X509KeyPair(certPem, pkeyPem)
 	if err != nil {
-		log.Fatalf("unable to load client cert and key pair: %v", err)
+		printf("unable to load client cert and key pair: %v", err)
+		os.Exit(1)
 	}
 	return []tls.Certificate{cert}
 }
@@ -195,7 +197,8 @@ func parseURL(uri string) *url.URL {
 
 	url, err := url.Parse(uri)
 	if err != nil {
-		log.Fatalf("could not parse url %q: %v", uri, err)
+		printf("could not parse url %q: %v", uri, err)
+		os.Exit(1)
 	}
 
 	if url.Scheme == "" {
@@ -210,7 +213,8 @@ func parseURL(uri string) *url.URL {
 func headerKeyValue(h string) (string, string) {
 	i := strings.Index(h, ":")
 	if i == -1 {
-		log.Fatalf("Header '%s' has invalid format, missing ':'", h)
+		printf("Header '%s' has invalid format, missing ':'", h)
+		os.Exit(1)
 	}
 	return strings.TrimRight(h[:i], " "), strings.TrimLeft(h[i:], " :")
 }
@@ -256,7 +260,8 @@ func visit(url *url.URL) {
 		},
 		ConnectDone: func(net, addr string, err error) {
 			if err != nil {
-				log.Fatalf("unable to connect to host %v: %v", addr, err)
+				printf("unable to connect to host %v: %v", addr, err)
+				os.Exit(1)
 			}
 			t2 = time.Now()
 			printf("%s%s                            \n", color.GreenString("Connected to "), color.CyanString(addr))
@@ -327,7 +332,8 @@ func visit(url *url.URL) {
 
 	resp, err := client.Do(req)
 	if err != nil {
-		log.Fatalf("failed to read response: %v", err)
+		printf("\nfailed to read response: %v", err)
+		os.Exit(1)
 	}
 
 	// Print SSL/TLS version which is used for connection
@@ -429,12 +435,14 @@ func visit(url *url.URL) {
 				// 30x but no Location to follow, give up.
 				return
 			}
-			log.Fatalf("unable to follow redirect: %v", err)
+			printf("unable to follow redirect: %v", err)
+			os.Exit(1)
 		}
 
 		redirectsFollowed++
 		if redirectsFollowed > maxRedirects {
-			log.Fatalf("maximum number of redirects (%d) followed", maxRedirects)
+			printf("maximum number of redirects (%d) followed", maxRedirects)
+			os.Exit(1)
 		}
 
 		visit(loc)
@@ -448,7 +456,8 @@ func isRedirect(resp *http.Response) bool {
 func newRequest(method string, url *url.URL, body string) *http.Request {
 	req, err := http.NewRequest(method, url.String(), createBody(body))
 	if err != nil {
-		log.Fatalf("unable to create request: %v", err)
+		printf("unable to create request: %v", err)
+		os.Exit(1)
 	}
 	for _, h := range httpHeaders {
 		k, v := headerKeyValue(h)
@@ -466,7 +475,8 @@ func createBody(body string) io.Reader {
 		filename := body[1:]
 		f, err := os.Open(filename)
 		if err != nil {
-			log.Fatalf("failed to open data file %s: %v", filename, err)
+			printf("failed to open data file %s: %v", filename, err)
+			os.Exit(1)
 		}
 		return f
 	}
@@ -572,13 +582,15 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 			}
 
 			if filename == "/" {
-				log.Fatalf("No remote filename; specify output filename with -o to save response body")
+				printf("No remote filename; specify output filename with -o to save response body")
+				os.Exit(1)
 			}
 		}
 
 		f, err := os.Create(filename)
 		if err != nil {
-			log.Fatalf("unable to create file %s: %v", filename, err)
+			printf("unable to create file %s: %v", filename, err)
+			os.Exit(1)
 		}
 		defer f.Close()
 		w = f
@@ -642,7 +654,8 @@ func readResponseBody(req *http.Request, resp *http.Response, total int64) strin
 		if verbose {
 			printf("\n")
 		}
-		log.Fatalf("failed to read response body: %v", err)
+		printf("failed to read response body: %v", err)
+		os.Exit(1)
 	} else {
 		if verbose {
 			if total > 0 {
